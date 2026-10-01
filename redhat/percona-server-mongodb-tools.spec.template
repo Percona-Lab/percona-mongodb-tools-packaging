@@ -76,12 +76,13 @@ mkdir -p $GOPATH/src/github.com/mongodb
 cp -r $RPM_BUILD_DIR/%{src_dir} ${GOPATH}/src/github.com/mongodb/mongo-tools
 pushd ${GOPATH}/src/github.com/mongodb/mongo-tools
 . ./set_tools_revision.sh
-# Version/commit stamping. `sed '14d'` drops the goke/pkg/git import and shifts every later
-# line by one, which is why the next sed's 246,254 lands on the original 247-255 (the
-# versionStr and gitCommit blocks). Tied to the upstream tag -- re-verify on every bump of
-# MONGO_TOOLS_TAG_VERSION.
-sed -i '14d' buildscript/build.go
-sed -i '246,254d' buildscript/build.go
+# Version/commit stamping: drop the goke/pkg/git import and the versionStr/gitCommit lookups
+# in getLdflags, then put the literals in their place. Same result as psmdb's `sed '14d'` +
+# `sed '246,254d'`, but by content, since the line numbers move between tags (100.19.1 needs
+# 15d + 260,268d). If upstream rewrites getLdflags the range won't match and the build fails
+# on the leftover versionStr instead of stamping the wrong thing.
+sed -i '/^\t"github.com\/craiggwilson\/goke\/pkg\/git"$/d' buildscript/build.go
+sed -i '/^\tversionStr, err := runCmd(ctx, "go", "run", "release\/release.go", "get-version")$/,/failed to get git commit hash/{/failed to get git commit hash/{N;d};d}' buildscript/build.go
 sed -i "s:versionStr,:\"$PSMDB_TOOLS_REVISION\",:" buildscript/build.go
 sed -i "s:gitCommit):\"$PSMDB_TOOLS_COMMIT_HASH\"):" buildscript/build.go
 ./make build

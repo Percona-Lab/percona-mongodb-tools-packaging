@@ -276,8 +276,23 @@ apply_go_deps() {
         done
         go mod edit $args || abort '`go mod edit` failed'
     fi
+    # GET is a floor: only bump what upstream pins below it, never downgrade a newer tag
     if [ -n "${GO_DEPS_GET:-}" ]; then
-        go get $GO_DEPS_GET || abort '`go get` failed'
+        local get="" spec mod want have
+        for spec in $GO_DEPS_GET; do
+            mod=${spec%@*}
+            want=${spec#*@}
+            have=$(awk -v m="$mod" '$1 == m {print $2; exit} $1 == "require" && $2 == m {print $3; exit}' go.mod)
+            if [ -n "$have" ] && [ "$(printf '%s\n%s\n' "$have" "$want" | sort -V | tail -1)" = "$have" ]; then
+                echo "go-deps: keep $mod $have (>= $want)"
+                continue
+            fi
+            echo "go-deps: bump $mod ${have:-<none>} -> $want"
+            get="$get $spec"
+        done
+        if [ -n "$get" ]; then
+            go get $get || abort '`go get` failed'
+        fi
     fi
     go mod tidy   || abort '`go mod tidy` failed'
     go mod vendor || abort '`go mod vendor` failed'
@@ -311,10 +326,7 @@ assert_binaries() {
 }
 
 # Build the tools out of an unpacked source tree. $1 is that tree; binaries land in $1/bin.
-# The seds are ported one-to-one from psmdb_builder.sh / spec.template / debian/rules:
-# `sed '14d'` drops the goke/pkg/git import and shifts the file by one line, which is why
-# `sed '246,254d'` lands on the original 247-255. Tied to the upstream tag -- re-verify on
-# every bump of MONGO_TOOLS_TAG_VERSION.
+# The stamping below is repeated in the spec template and debian/rules; keep all three in step.
 compile_tools() {
     local srcdir="$1"
     local gobase="$2"
@@ -330,8 +342,14 @@ compile_tools() {
 
     cd "$GOPATH/src/github.com/mongodb/mongo-tools" || abort 'cannot cd into the GOPATH copy'
     . ./set_tools_revision.sh
-    sed -i '14d' buildscript/build.go            || abort '`sed 14d` failed'
-    sed -i '246,254d' buildscript/build.go       || abort '`sed 246,254d` failed'
+    # Version/commit stamping: drop the goke/pkg/git import and the versionStr/gitCommit lookups
+    # in getLdflags, then put the literals in their place. Same result as psmdb's `sed '14d'` +
+    # `sed '246,254d'`, but by content, since the line numbers move between tags (100.19.1 needs
+    # 15d + 260,268d). If upstream rewrites getLdflags the range won't match and the build fails
+    # on the leftover versionStr instead of stamping the wrong thing.
+    sed -i '/^\t"github.com\/craiggwilson\/goke\/pkg\/git"$/d' buildscript/build.go || abort '`sed` git import failed'
+    sed -i '/^\tversionStr, err := runCmd(ctx, "go", "run", "release\/release.go", "get-version")$/,/failed to get git commit hash/{/failed to get git commit hash/{N;d};d}' buildscript/build.go \
+        || abort '`sed` getLdflags failed'
     sed -i "s:versionStr,:\"$PSMDB_TOOLS_REVISION\",:" buildscript/build.go || abort '`sed` versionStr failed'
     sed -i "s:gitCommit):\"$PSMDB_TOOLS_COMMIT_HASH\"):" buildscript/build.go || abort '`sed` gitCommit failed'
     ./make build || abort '`./make build` failed'

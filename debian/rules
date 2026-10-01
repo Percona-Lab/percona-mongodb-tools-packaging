@@ -23,11 +23,9 @@ override_dh_auto_clean:
 	find $(TOOLSSRC) -name '*.pyc' -delete
 
 # dpkg-buildpackage invokes `debian/rules build`, and `dh binary` then asks for `build`
-# again. The seds below are line-number based and are NOT idempotent -- re-applying them to
-# an already-patched tree breaks build.go ("non-declaration statement outside function
-# body"). So this is stamped, and the GOPATH copy is recreated from the pristine source
-# tree every time. PSMDB's rules has the same non-idempotent target; it just never gets hit
-# there.
+# again. Stamped so the tools compile once, and the GOPATH copy is recreated from the
+# pristine source tree every time. The version/commit stamping is explained in the spec
+# template; keep the three copies in step.
 compile-mongo-tools: debian/tools-build-stamp
 	@:
 
@@ -40,8 +38,8 @@ debian/tools-build-stamp:
         export PATH="/usr/local/go/bin:$(PATH):$(GOPATH)"; \
         export GOBINPATH="/usr/local/go/bin"
 	cd $(TOOLSSRC)/../src/github.com/mongodb/mongo-tools; \
-        sed -i '14d' buildscript/build.go; \
-        sed -i '246,254d' buildscript/build.go; \
+        sed -i '/^\t"github.com\/craiggwilson\/goke\/pkg\/git"$$/d' buildscript/build.go; \
+        sed -i '/^\tversionStr, err := runCmd(ctx, "go", "run", "release\/release.go", "get-version")$$/,/failed to get git commit hash/{/failed to get git commit hash/{N;d};d}' buildscript/build.go; \
         sed -i "s:versionStr,:\"$(PSMDB_TOOLS_REVISION)\",:" buildscript/build.go; \
         sed -i "s:gitCommit):\"$(PSMDB_TOOLS_COMMIT_HASH)\"):" buildscript/build.go; \
         ./make build;
