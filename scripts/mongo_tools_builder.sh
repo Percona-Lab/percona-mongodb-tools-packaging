@@ -170,6 +170,16 @@ install_deps() {
       yum -y install wget git tar which findutils diffutils
       # gcc + krb5-devel: the `gssapi` build tag is cgo, linking -lgssapi_krb5 -lkrb5
       yum -y install gcc krb5-devel
+      if [ x"$RHEL" = x8 ]; then
+        yum-config-manager --enable ol8_codeready_builder
+        yum -y install epel-release
+      elif [ x"$RHEL" = x9 -o x"$RHEL" = x2023 ]; then
+        dnf config-manager --enable ol9_codeready_builder
+        yum -y install oracle-epel-release-el9
+      elif [ x"$RHEL" = x10 ]; then
+        dnf config-manager --enable ol10_codeready_builder
+        yum -y install oracle-epel-release-el10
+      fi
       yum -y install rpm-build rpmlint
     else
       export DEBIAN_FRONTEND=noninteractive
