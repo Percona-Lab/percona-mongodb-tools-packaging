@@ -1,0 +1,11 @@
+# build output
+/source_tarball/
+/source_deb/
+/srpm/
+/rpm/
+/deb/
+/tarball/
+*.properties
+
+# SDD working docs, kept local
+/specs/

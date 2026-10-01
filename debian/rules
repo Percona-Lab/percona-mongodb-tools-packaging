@@ -1,0 +1,69 @@
+#!/usr/bin/make -f
+#
+# Lifted from percona-server-mongodb/percona-packaging/debian/rules (v8.3): the
+# compile-mongo-tools target is the whole build here. No bazel, no C++, no -dbg package.
+#
+export DH_VERBOSE=1
+export DEB_BUILD_HARDENING=1
+export NJOBS=$(shell grep -c processor /proc/cpuinfo)
+export TOOLSSRC=$(CURDIR)
+export MONGOTOOLS=bsondump mongostat mongofiles mongoexport mongoimport mongorestore mongodump mongotop
+export PATH := /usr/local/go/bin:$(PATH)
+
+%:
+	dh $@
+
+override_dh_builddeb:
+	dh_builddeb -- -Zgzip
+
+override_dh_auto_clean:
+	dh_auto_clean
+	rm -fr $(TOOLSSRC)/bin
+	rm -f debian/tools-build-stamp
+	find $(TOOLSSRC) -name '*.pyc' -delete
+
+# dpkg-buildpackage invokes `debian/rules build`, and `dh binary` then asks for `build`
+# again. The seds below are line-number based and are NOT idempotent -- re-applying them to
+# an already-patched tree breaks build.go ("non-declaration statement outside function
+# body"). So this is stamped, and the GOPATH copy is recreated from the pristine source
+# tree every time. PSMDB's rules has the same non-idempotent target; it just never gets hit
+# there.
+compile-mongo-tools: debian/tools-build-stamp
+	@:
+
+debian/tools-build-stamp:
+	mkdir -p $(TOOLSSRC)/bin $(TOOLSSRC)/../src/github.com/mongodb
+	rm -rf $(TOOLSSRC)/../src/github.com/mongodb/mongo-tools
+	cp -r $(TOOLSSRC) $(TOOLSSRC)/../src/github.com/mongodb/mongo-tools
+	export GOROOT="/usr/local/go/"; \
+        export GOPATH=$(TOOLSSRC)/../; \
+        export PATH="/usr/local/go/bin:$(PATH):$(GOPATH)"; \
+        export GOBINPATH="/usr/local/go/bin"
+	cd $(TOOLSSRC)/../src/github.com/mongodb/mongo-tools; \
+        sed -i '14d' buildscript/build.go; \
+        sed -i '246,254d' buildscript/build.go; \
+        sed -i "s:versionStr,:\"$(PSMDB_TOOLS_REVISION)\",:" buildscript/build.go; \
+        sed -i "s:gitCommit):\"$(PSMDB_TOOLS_COMMIT_HASH)\"):" buildscript/build.go; \
+        ./make build;
+	cp -av $(TOOLSSRC)/../src/github.com/mongodb/mongo-tools/bin/* $(TOOLSSRC)/bin
+	touch $@
+
+# Upstream's getBuildFlags only logs when version stamping or tag selection fails, so the
+# build can succeed while producing unstamped or Kerberos-less binaries. Assert both.
+verify-mongo-tools:
+	./bin/mongodump --version | grep -q "^mongodump version: $(PSMDB_TOOLS_REVISION)$$" \
+	    || { echo "ERROR: version stamping failed"; ./bin/mongodump --version; exit 1; }
+	ldd bin/mongodump | grep -q libgssapi_krb5 \
+	    || { echo "ERROR: built without the gssapi build tag"; ldd bin/mongodump; exit 1; }
+
+build: compile-mongo-tools verify-mongo-tools
+	@:
+
+override_dh_auto_install:
+	dh_auto_install
+	cp -av $(TOOLSSRC)/bin/* debian/percona-server-mongodb-tools/usr/bin
+
+# --dbg-package gives a plain percona-server-mongodb-tools-dbg, matching how PSMDB names
+# its debug package (percona-server-mongodb-dbg), rather than an automatic *-dbgsym.ddeb.
+override_dh_strip:
+	dh_strip -a --dbg-package=percona-server-mongodb-tools-dbg

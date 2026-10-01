@@ -1,0 +1,5 @@
+percona-server-mongodb-tools (100.18.0) UNRELEASED; urgency=medium
+
+  * PSMDB-1944: split out of the percona-server-mongodb source package.
+
+ -- Oleksandr Miroshnychenko <alex.miroshnychenko@percona.com>  Tue,  1 Sep 2026 16:00:00 +0200
