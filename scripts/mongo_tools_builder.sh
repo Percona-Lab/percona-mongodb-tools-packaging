@@ -556,7 +556,13 @@ build_tarball(){
     compile_tools "${WORKDIR}/${SRCDIR}" "${WORKDIR}/build_tools"
 
     cd "$WORKDIR" || abort "cannot cd to \`$WORKDIR\`"
-    TARNAME="${PRODUCT}-${VERSION}-${RELEASE}-${ARCH}.${OS_NAME}"
+    # same suffix as the server tarballs: ol<N> on every rpm OS (amzn too), the codename on deb.
+    # OS_NAME stays el<N>/amzn<N> because it is the rpm dist tag.
+    if [ "x$OS" = "xrpm" ]; then
+        TARNAME="${PRODUCT}-${VERSION}-${RELEASE}-${ARCH}.ol${RHEL}"
+    else
+        TARNAME="${PRODUCT}-${VERSION}-${RELEASE}-${ARCH}.${OS_NAME}"
+    fi
     rm -rf "${TARNAME}"
     mkdir -p "${TARNAME}/bin"
     cp "${SRCDIR}"/bin/* "${TARNAME}/bin/" || abort 'copying binaries into the tarball tree failed'
