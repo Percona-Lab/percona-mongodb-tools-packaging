@@ -238,9 +238,7 @@ get_sources(){
     cp -a "${PKGROOT}/redhat"   percona-packaging/ || abort 'copying redhat/ failed'
     cp -a "${PKGROOT}/debian"   percona-packaging/ || abort 'copying debian/ failed'
     cp -a "${PKGROOT}/manpages" percona-packaging/ || abort 'copying manpages/ failed'
-    cp -a "${PKGROOT}/docs"     percona-packaging/ || abort 'copying docs/ failed'
     cp -a percona-packaging/manpages .            || abort 'copying manpages to source root failed'
-    cp -a percona-packaging/docs/*  .             || abort 'copying docs to source root failed'
 
     REVISION="$(echo "$TOOLS_COMMIT" | cut -c1-7)"
     {
