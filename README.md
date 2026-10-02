@@ -14,7 +14,7 @@ rebuild is now an edit to `go-deps.env`, a release bump, and one pipeline run.
 ## Versioning
 
 The package carries the **upstream tools version** with an independent release counter —
-e.g. `percona-server-mongodb-tools-100.18.0-1`. It is deliberately **not** tied to the
+e.g. `percona-server-mongodb-tools-100.19.1-1`. It is deliberately **not** tied to the
 PSMDB version any more. No `Epoch` is needed: `100.x` sorts above every PSMDB version in
 both rpm and dpkg.
 
@@ -25,7 +25,7 @@ artifact is built where it will run).
 
 ```sh
 scripts/mongo_tools_builder.sh --builddir=/tmp/build --install_deps=1
-scripts/mongo_tools_builder.sh --builddir=/tmp/build --get_sources=1 --branch=100.18.0 --release=1
+scripts/mongo_tools_builder.sh --builddir=/tmp/build --get_sources=1 --branch=100.19.1 --release=1
 scripts/mongo_tools_builder.sh --builddir=/tmp/build --build_rpm=1
 ```
 

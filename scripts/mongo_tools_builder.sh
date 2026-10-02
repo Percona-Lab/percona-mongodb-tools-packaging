@@ -1,11 +1,7 @@
 #!/usr/bin/env bash
 #
-# Build the MongoDB Database Tools as Percona packages.
-#
-# Option contract, properties-file hand-off between stages and overall structure mirror
-# percona-server-mongodb/percona-packaging/scripts/psmdb_builder.sh, so a Jenkins job for
-# this repo is a structural copy of the PSMDB one. Everything C++/bazel/telemetry-related
-# is gone; what is left is the mongo-tools part, unchanged in behaviour.
+# Builds percona-server-mongodb-tools packages.
+# Same options and stage hand-off as psmdb_builder.sh, minus the server parts.
 
 abort() {
     printf "Error: %s\n" "${1:-unknown error}" >&2
@@ -207,33 +203,24 @@ get_sources(){
     cd "${PRODUCT}" || abort "cannot cd to \`$WORKDIR/$PRODUCT\`"
 
     TOOLS_COMMIT="$(git rev-parse HEAD)" || abort '`git rev-parse HEAD` failed'
-    # Package version is the upstream tools version, deliberately decoupled from PSMDB.
-    # Strip a leading `v`/`r` if the tag ever carries one.
+    # package version = upstream tools version; strip a leading v/r
     [ -n "$VERSION" ] || VERSION="$(echo "$BRANCH" | sed -e 's/^[vr]//')"
 
-    # Consumed by the spec's %build and by debian/rules, which source it. Same variable
-    # names as PSMDB uses, so the ported seds need no edits.
+    # sourced by the spec %build and debian/rules, same names as in psmdb_builder.sh
     {
         echo "export PSMDB_TOOLS_COMMIT_HASH=\"${TOOLS_COMMIT}\""
         echo "export PSMDB_TOOLS_REVISION=\"${VERSION}\""
     } > set_tools_revision.sh
     chmod +x set_tools_revision.sh
 
-    # Ported one-to-one from psmdb_builder.sh. Upstream's platform.DetectLocal() shells out
-    # to `lsb_release`, which is absent on the RHEL-family images, and Oracle Linux reports
-    # `OracleServer`, which is not in upstream's platform table. Detection therefore cannot
-    # succeed, and on failure the build silently drops -tags (no gssapi) and -buildmode=pie.
-    # Forcing rhel93 on every OS is what PSMDB does; the platform only selects build tags
-    # (identical for all platforms) and, on Linux, -buildmode=pie.
-    # https://jira.mongodb.org/browse/TOOLS-3318
+    # same sed as psmdb_builder.sh: detection fails on OL (no lsb_release, "OracleServer")
+    # and the build then silently drops the gssapi tag. https://jira.mongodb.org/browse/TOOLS-3318
     sed -i '/GetLinuxDistroAndVersion()/ s/os, version, err = GetLinuxDistroAndVersion()/os, version, err = "rhel", "9.3", nil/' release/platform/platform.go \
         || abort '`sed` on release/platform/platform.go failed'
 
     apply_go_deps
 
-    # Packaging layout inside the source tree, mirroring psmdb_builder.sh:257-258 so the
-    # spec (%{src_dir}/manpages/*) and debian/percona-server-mongodb-tools.manpages
-    # (manpages/<tool>.1) both resolve.
+    # the spec and debian/*.manpages expect percona-packaging/ and manpages/ here
     mkdir -p percona-packaging
     cp -a "${PKGROOT}/redhat"   percona-packaging/ || abort 'copying redhat/ failed'
     cp -a "${PKGROOT}/debian"   percona-packaging/ || abort 'copying debian/ failed'
@@ -250,8 +237,7 @@ get_sources(){
         echo "TOOLS_REPO=${REPO}"
         echo "TOOLS_COMMIT=${TOOLS_COMMIT}"
         echo "REVISION=${REVISION}"
-        # Consumed by the Jenkins job, which greps UPLOAD out of this file to derive the
-        # artifact paths. Same shape as mongosh-packaging's builder.
+        # Jenkins reads UPLOAD from here to build the artifact paths
         echo "UPLOAD=UPLOAD/experimental/BUILDS/${PRODUCT}/${PRODUCT}-${VERSION}-${RELEASE}/${BRANCH}/${REVISION}/${BUILD_ID:-}"
     } > "${WORKDIR}/${PROPERTIES}"
 
@@ -268,8 +254,7 @@ get_sources(){
     return
 }
 
-# Bump Go dependencies above what upstream pins, to clear CVEs. Values live in
-# go-deps.env; see the warning in that file about them going stale on a tag bump.
+# raise Go deps from go-deps.env to clear CVEs
 apply_go_deps() {
     [ -r "${PKGROOT}/go-deps.env" ] || abort "cannot read \`${PKGROOT}/go-deps.env\`"
     . "${PKGROOT}/go-deps.env"
@@ -310,9 +295,7 @@ apply_go_deps() {
     fi
 }
 
-# Upstream's getBuildFlags only logs when version stamping or platform detection fails and
-# builds anyway, so a green build can still ship unstamped or Kerberos-less binaries.
-# Called after every path that produces binaries.
+# upstream only logs when stamping or platform detection fails, so check the binaries
 assert_binaries() {
     local bindir="$1"
     local want_version="$2"
@@ -333,8 +316,8 @@ assert_binaries() {
     echo "assert_binaries: ${want_version} / ${want_commit} / gssapi OK"
 }
 
-# Build the tools out of an unpacked source tree. $1 is that tree; binaries land in $1/bin.
-# The stamping below is repeated in the spec template and debian/rules; keep all three in step.
+# build from an unpacked source tree ($1), binaries go to $1/bin
+# the stamping is repeated in the spec and debian/rules, keep them in sync
 compile_tools() {
     local srcdir="$1"
     local gobase="$2"
@@ -350,11 +333,8 @@ compile_tools() {
 
     cd "$GOPATH/src/github.com/mongodb/mongo-tools" || abort 'cannot cd into the GOPATH copy'
     . ./set_tools_revision.sh
-    # Version/commit stamping: drop the goke/pkg/git import and the versionStr/gitCommit lookups
-    # in getLdflags, then put the literals in their place. Same result as psmdb's `sed '14d'` +
-    # `sed '246,254d'`, but by content, since the line numbers move between tags (100.19.1 needs
-    # 15d + 260,268d). If upstream rewrites getLdflags the range won't match and the build fails
-    # on the leftover versionStr instead of stamping the wrong thing.
+    # same result as psmdb's line-number seds, matched by content because
+    # the line numbers change between tags
     sed -i '/^\t"github.com\/craiggwilson\/goke\/pkg\/git"$/d' buildscript/build.go || abort '`sed` git import failed'
     sed -i '/^\tversionStr, err := runCmd(ctx, "go", "run", "release\/release.go", "get-version")$/,/failed to get git commit hash/{/failed to get git commit hash/{N;d};d}' buildscript/build.go \
         || abort '`sed` getLdflags failed'
@@ -514,8 +494,7 @@ build_deb(){
     dpkg-source -x ${DSC} || abort '`dpkg-source -x` failed'
     cd "${PRODUCT}-${VERSION}" || abort "cannot cd to \`${PRODUCT}-${VERSION}\`"
 
-    # PSMDB_TOOLS_REVISION / PSMDB_TOOLS_COMMIT_HASH are read by debian/rules from the
-    # environment; same mechanism as psmdb_builder.sh:805.
+    # debian/rules reads PSMDB_TOOLS_* from the environment
     . ./set_tools_revision.sh
 
     dch -m -D "${DEBIAN}" --force-distribution -v "${VERSION}-${RELEASE}.${DEBIAN}" 'Update distribution' \
@@ -528,10 +507,7 @@ build_deb(){
 
     cd "$WORKDIR"
     mkdir -p "$CURDIR/deb" "$WORKDIR/deb"
-    # debian/rules uses dh_strip --dbg-package, so the debug symbols come out as a normal
-    # percona-server-mongodb-tools-dbg *.deb and there is no *.ddeb. The .ddeb copy stays
-    # as a safety net: if anyone ever switches to automatic dbgsym, a 31 MB artifact must
-    # not vanish silently the way it did before this was added.
+    # --dbg-package gives a regular -dbg .deb; copy .ddeb too in case that changes
     for d in "$WORKDIR/deb" "$CURDIR/deb"; do
         cp $WORKDIR/*.deb "$d"
         cp $WORKDIR/*.ddeb "$d" 2>/dev/null || true
@@ -556,8 +532,8 @@ build_tarball(){
     compile_tools "${WORKDIR}/${SRCDIR}" "${WORKDIR}/build_tools"
 
     cd "$WORKDIR" || abort "cannot cd to \`$WORKDIR\`"
-    # same suffix as the server tarballs: ol<N> on every rpm OS (amzn too), the codename on deb.
-    # OS_NAME stays el<N>/amzn<N> because it is the rpm dist tag.
+    # same suffix as the server tarballs: ol<N> for rpm OSes (amzn too), codename for deb.
+    # OS_NAME stays el<N>, it is the rpm dist tag
     if [ "x$OS" = "xrpm" ]; then
         TARNAME="${PRODUCT}-${VERSION}-${RELEASE}-${ARCH}.ol${RHEL}"
     else
