@@ -1,18 +1,8 @@
-# Standalone spec for the MongoDB Database Tools as packaged by Percona.
-#
-# Lifted from percona-server-mongodb/percona-packaging/redhat/percona-server-mongodb.spec.template
-# (v8.3): the `%package tools` stanza, its Conflicts, the "Mongo Tools compilation" block and
-# the `%files tools` list are reproduced as they are there, so this package is a drop-in
-# replacement for the subpackage it takes over from.
-#
-# Placeholders are filled in by scripts/mongo_tools_builder.sh, same convention as PSMDB:
-#   @@VERSION@@  @@RELEASE@@  @@SOURCE_TARBALL@@  @@SRC_DIR@@
+# percona-server-mongodb-tools, built outside the PSMDB server package.
+# Metadata, Conflicts and %files match the old PSMDB -tools subpackage.
+# @@...@@ placeholders are filled in by mongo_tools_builder.sh
 
-# Debuginfo handling, carried over verbatim from the PSMDB spec template (lines 1-22).
-# PSMDB publishes a separate percona-server-mongodb-tools-debuginfo package (verified
-# against 8.3.8-2: 29 MB, Group Development/Debug, 36 files under /usr/lib/debug, provides
-# debuginfo(build-id) for all 8 binaries, and NO accompanying -debugsource package), so
-# this spec must keep producing it. rpm derives it automatically from the package name.
+# debuginfo settings from the PSMDB spec, so -tools-debuginfo is still built
 %global __brp_strip_args --strip-debug
 %global __find_debuginfo /usr/lib/rpm/find-debuginfo.sh -g
 
@@ -31,8 +21,7 @@
 %global _find_debuginfo_dwz_opts %{nil}
 %endif
 
-# NB: the /usr/lib/.build-id/* symlink tree stays in the main package -- the published
-# 8.3.8-2 RPM ships it too, so `_build_id_links none` would make our file list differ.
+# keep the /usr/lib/.build-id links, the old package has them too
 
 Name:           percona-server-mongodb-tools
 Version:        @@VERSION@@
@@ -40,10 +29,9 @@ Release:        @@RELEASE@@%{?dist}
 Summary:        The tools package for Percona Server for MongoDB
 Group:          Applications/Databases
 
-# The tools are Apache-2.0 upstream, unlike the SSPL-licensed PSMDB server.
+# tools are Apache-2.0, the server is SSPL
 License:        ASL 2.0
-# Kept pointing at PSMDB, exactly as the published package does. This is the product URL
-# users should land on, not the upstream repo we happen to build from.
+# same URL as the old package
 URL:            https://github.com/percona/percona-server-mongodb.git
 Source0:        @@SOURCE_TARBALL@@
 
@@ -76,12 +64,10 @@ mkdir -p $GOPATH/src/github.com/mongodb
 cp -r $RPM_BUILD_DIR/%{src_dir} ${GOPATH}/src/github.com/mongodb/mongo-tools
 pushd ${GOPATH}/src/github.com/mongodb/mongo-tools
 . ./set_tools_revision.sh
-# Version/commit stamping. `sed '14d'` drops the goke/pkg/git import and shifts every later
-# line by one, which is why the next sed's 246,254 lands on the original 247-255 (the
-# versionStr and gitCommit blocks). Tied to the upstream tag -- re-verify on every bump of
-# MONGO_TOOLS_TAG_VERSION.
-sed -i '14d' buildscript/build.go
-sed -i '246,254d' buildscript/build.go
+# same result as psmdb's line-number seds, matched by content because
+# the line numbers change between tags
+sed -i '/^\t"github.com\/craiggwilson\/goke\/pkg\/git"$/d' buildscript/build.go
+sed -i '/^\tversionStr, err := runCmd(ctx, "go", "run", "release\/release.go", "get-version")$/,/failed to get git commit hash/{/failed to get git commit hash/{N;d};d}' buildscript/build.go
 sed -i "s:versionStr,:\"$PSMDB_TOOLS_REVISION\",:" buildscript/build.go
 sed -i "s:gitCommit):\"$PSMDB_TOOLS_COMMIT_HASH\"):" buildscript/build.go
 ./make build
@@ -89,8 +75,7 @@ mv bin/* $RPM_BUILD_DIR/%{src_dir}/bin
 popd
 popd
 
-# Both stamping and build-tag selection fail *silently* upstream (getBuildFlags only logs),
-# so assert instead of trusting the build.
+# upstream only logs stamping/tag failures, so check the binaries
 pushd $RPM_BUILD_DIR/%{src_dir}
 ./bin/mongodump --version | grep -q "^mongodump version: ${PSMDB_TOOLS_REVISION}$" \
     || { echo "ERROR: version stamping failed"; ./bin/mongodump --version; exit 1; }
