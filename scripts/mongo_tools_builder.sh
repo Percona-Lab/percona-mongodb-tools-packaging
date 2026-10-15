@@ -580,7 +580,7 @@ DEBUG=0
 PRODUCT=percona-server-mongodb-tools
 PROPERTIES="${PRODUCT}.properties"
 TOOLS="bsondump mongostat mongofiles mongoexport mongoimport mongorestore mongodump mongotop"
-GO_VERSION="1.26.8"
+GO_VERSION="1.26.9"
 
 REPO="https://github.com/mongodb/mongo-tools.git"
 BRANCH="$(cat "${PKGROOT}/MONGO_TOOLS_TAG_VERSION" 2>/dev/null || echo master)"
